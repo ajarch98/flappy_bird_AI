@@ -63,7 +63,13 @@ class FlappyBird:
         pygame.display.update()
 
     def draw_game_over_screen(self):
-        """Draws game_over screen."""
+        """
+        Draw game_over screen.
+
+        :return bool: return boolean based on user input.
+            If boolean is True, continue should be called
+            in the main while loop in def play().
+        """
 
         self.WIN.fill((0, 0, 0))
         pygame.display.update()
@@ -85,6 +91,22 @@ class FlappyBird:
 
         pygame.display.update()
 
+        pygame.event.clear()
+        event = pygame.event.wait()
+
+        # for event in pygame_events:
+        if event.type == pygame.KEYDOWN and\
+                event.key == pygame.K_SPACE or\
+                event.type == pygame.QUIT:
+            self.run = False
+            pygame.quit()
+            quit()
+        elif event.type == pygame.KEYDOWN:
+            self.__init__()
+            return True
+        else:
+            return True
+
     def play(self):
         """Play FlappyBird game."""
         while self.run:
@@ -93,21 +115,8 @@ class FlappyBird:
             pygame_events = pygame.event.get()
 
             if self.game_over is True:
-                self.draw_game_over_screen()
-                pygame.event.clear()
-                event = pygame.event.wait()
-
-                # for event in pygame_events:
-                if event.type == pygame.KEYDOWN and\
-                        event.key == pygame.K_SPACE or\
-                        event.type == pygame.QUIT:
-                    self.run = False
-                    pygame.quit()
-                    quit()
-                elif event.type == pygame.KEYDOWN:
-                    self.__init__()
-                    continue
-                else:
+                continue_flag = self.draw_game_over_screen()
+                if continue_flag is True:
                     continue
 
             for event in pygame_events:

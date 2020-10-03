@@ -8,7 +8,7 @@ I completed this project in two phases:
 
 ## About NEAT
 
-NEAT is an acronym for Neuro-Evolution of Augmenting Technologies. It is an evolution algorithm. 
+NEAT is an acronym for Neuro-Evolution of Augmenting Technologies. It is genetic algorithm developed by Ken Stanley in 2002. More information [here](https://en.wikipedia.org/wiki/Neuroevolution_of_augmenting_topologies).
 
 It operates by:
 - creating a generation containing multiple instances of objects

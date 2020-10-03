@@ -1,7 +1,7 @@
 import pygame
 import random
 import os
-import time
+import neat
 
 
 class FlappyBird:
@@ -37,8 +37,9 @@ class FlappyBird:
         self.clock = pygame.time.Clock()
 
         self.run = True
+        self.first_creation = True
 
-    def draw_window(self, win, bird, pipes, base, score):
+    def draw_window(self, win, birds, pipes, base, score, generation=None, pipe_indicator=None):
         """
         Draw window for main game loop.
 
@@ -58,7 +59,15 @@ class FlappyBird:
         win.blit(score_label, (self.WIN_WIDTH - score_label.get_width() - 15, 10))
 
         # bird
-        bird.draw(win)
+        for bird in birds:
+            bird.draw(win)
+
+        # alive + generations
+        if generation:
+            generations_label = self.START_FONT.render(f"Generation: {str(generation-1)}", 1, (255, 255, 255))
+            alive_label = self.START_FONT.render(f"Alive: {str(len(birds))}", 1, (255, 255, 255))
+            win.blit(generations_label, (10, 10))
+            win.blit(alive_label, (10, 50))
 
         pygame.display.update()
 
@@ -70,7 +79,6 @@ class FlappyBird:
             If boolean is True, continue should be called
             in the main while loop in def play().
         """
-
         self.WIN.fill((0, 0, 0))
         pygame.display.update()
 
@@ -81,13 +89,20 @@ class FlappyBird:
         text_y = int(self.WIN.get_height() / 2 - text_rect.height / 2)
         self.WIN.blit(game_over_text, [text_x, text_y])
 
-        # TODO: reduce font size and add score to game_over screen
+        self.QUIT_FONT = pygame.font.SysFont("Calibri", 25)
         text = f"PRESS SPACE TO QUIT OR ANY KEY TO CONTINUE"
-        retry_text = self.START_FONT.render(text, True, (255, 255, 255))
+        retry_text = self.QUIT_FONT.render(text, True, (255, 255, 255))
         retry_rect = retry_text.get_rect()
         retry_x = int(self.WIN.get_width() / 2 - retry_rect.width / 2)
         retry_y = int(text_x + 20)
         self.WIN.blit(retry_text, [retry_x, retry_y])
+
+        score_text = f"Your score: {self.score}"
+        score_text_render = self.QUIT_FONT.render(score_text, True, (255, 255, 255))
+        score_text_rect = score_text_render.get_rect()
+        score_text_x = int(self.WIN.get_width() / 2 - score_text_rect.width / 2)
+        score_text_y = int(retry_y + 45)
+        self.WIN.blit(score_text_render, [score_text_x, score_text_y])
 
         pygame.display.update()
 
@@ -126,18 +141,20 @@ class FlappyBird:
                     quit()
                 if event.type == pygame.KEYDOWN and\
                         event.key == pygame.K_SPACE:
-                    # pygame.quit()
                     self.bird.jump()
 
             self.base.move()
+            self.bird.move()
 
             pipes_to_remove = []
             add_pipe = False
             for pipe in self.pipes:
                 pipe.move()
 
-                # TODO: Fix collision detection
-                if pipe.collide(self.bird, self.WIN):
+                # end game if there is a pipe collision
+                # or bird hits the ground
+                if pipe.collide(self.bird, self.WIN) or\
+                        self.bird.y >= self.WIN_HEIGHT:
                     self.game_over = True
 
                 if pipe.x + pipe.pipe_top.get_width() < 0:
@@ -154,7 +171,125 @@ class FlappyBird:
             for pipe in pipes_to_remove:
                 self.pipes.remove(pipe)
 
-            self.draw_window(self.WIN, self.bird, self.pipes, self.base, self.score)
+            birds = [self.bird]
+            self.draw_window(self.WIN, birds, self.pipes, self.base, self.score)
+
+    def train_ai(self, config_file):
+        config = neat.config.Config(
+            neat.DefaultGenome,
+            neat.DefaultReproduction,
+            neat.DefaultSpeciesSet,
+            neat.DefaultStagnation,
+            config_file
+        )
+
+        population = neat.Population(config)
+
+        population.add_reporter(neat.StdOutReporter(True))
+        stats = neat.StatisticsReporter()
+        population.add_reporter(stats)
+
+        winner = population.run(self.run_ai, 50)
+
+        print(f'\nBest genome:\n {winner}')
+
+    def run_ai(self, genomes, config):
+        """Run function modified for use in self.train_ai()."""
+        # pause before training begins to allow recording
+        if self.first_creation is True:
+            while True:
+                pygame.event.clear()
+                event = pygame.event.wait()
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+                    self.first_creation = False
+                    break
+
+        win = self.WIN
+        self.gen += 1
+
+        self.score = 0
+        self.base = Base(self.base_image, self.FLOOR)
+        nets = []
+        genomes_list = []
+        self.birds = []
+        self.pipes = [Pipe(self.pipe_img, 700)]
+
+        for genome_id, genome in genomes:
+            genome.fitness = 0
+            net = neat.nn.FeedForwardNetwork.create(genome, config)
+            nets.append(net)
+            self.birds.append(Bird(self.bird_images))
+            genomes_list.append(genome)
+
+        while self.run and len(self.birds) > 0:
+            self.clock.tick(30)
+
+            pygame_events = pygame.event.get()
+
+            for event in pygame_events:
+                if event.type == pygame.QUIT:
+                    self.run = False
+                    pygame.quit()
+                    quit()
+
+            pipe_indicator = 0
+            if len(self.birds) > 0:
+                if len(self.pipes) > 1 and\
+                        self.birds[0].x > self.pipes[0].x + self.pipes[0].pipe_top.get_width():
+                    pipe_indicator = 1
+
+            for x, bird in enumerate(self.birds):
+                genomes_list[x].fitness += 0.1
+                bird.move()
+
+                output = nets[self.birds.index(bird)].activate(
+                    (
+                        bird.y,
+                        abs(bird.y - self.pipes[pipe_indicator].height),
+                        abs(bird.y - self.pipes[pipe_indicator].bottom)
+                    )
+                )
+
+                if output[0] > 0.5:
+                    bird.jump()
+
+            self.base.move()
+
+            pipes_to_remove = []
+            add_pipe = False
+            for pipe in self.pipes:
+                pipe.move()
+                for bird in self.birds:
+                    if pipe.collide(bird, win):
+                        genomes_list[self.birds.index(bird)].fitness -= 1
+                        nets.pop(self.birds.index(bird))
+                        genomes_list.pop(self.birds.index(bird))
+                        self.birds.pop(self.birds.index(bird))
+
+                if pipe.x + pipe.pipe_top.get_width() < 0:
+                    pipes_to_remove.append(pipe)
+
+                if not pipe.passed and pipe.x < bird.x:
+                    pipe.passed = True
+                    add_pipe = True
+
+            if add_pipe is True:
+                self.score += 1
+                for genome in genomes_list:
+                    genome.fitness += 2
+                self.pipes.append(Pipe(self.pipe_img, self.WIN_WIDTH))
+
+            for pipe in pipes_to_remove:
+                self.pipes.remove(pipe)
+
+            for bird in self.birds:
+                if bird.y + bird.img.get_height() - 10 >= self.FLOOR or\
+                        bird.y < -50:
+                    nets.pop(self.birds.index(bird))
+                    genomes_list.pop(self.birds.index(bird))
+                    self.birds.pop(self.birds.index(bird))
+
+            self.draw_window(self.WIN, self.birds, self.pipes, self.base, self.score, self.gen, pipe_indicator)
 
 
 class Bird():
@@ -189,10 +324,69 @@ class Bird():
         self.tick_count = 0
         self.height = self.y
 
+    def move(self):
+        """Move the bird."""
+        self.tick_count += 1
+
+        # handle downward accelaration
+        displacement = self.vel * self.tick_count + (1.5 * self.tick_count ** 2)
+
+        # terminal_velocity
+        if displacement >= 16:
+            displacement = (displacement/abs(displacement)) * 16
+
+        if displacement < 0:
+            displacement -= 2
+
+        self.y = self.y + displacement
+
+        if displacement < 0 or self.y < self.height + 50:
+            if self.tilt < self.MAX_ROTATION:
+                self.tilt = self.MAX_ROTATION
+        else:
+            if self.tilt > -90:
+                self.tilt -= self.ROT_VEL
+
     def draw(self, win):
         """Draw the bird."""
         # TODO: edit code to display different bird images during flight
-        win.blit(self.img, (self.x, self.y))
+        self.img_count += 1
+
+        if self.img_count <= self.ANIMATION_TIME:
+            self.img = self.IMGS[0]
+        elif self.img_count <= self.ANIMATION_TIME * 2:
+            self.img = self.IMGS[1]
+        elif self.img_count <= self.ANIMATION_TIME * 3:
+            self.img = self.IMGS[2]
+        elif self.img_count <= self.ANIMATION_TIME * 4:
+            self.img = self.IMGS[1]
+        elif self.img_count > self.ANIMATION_TIME * 4:
+            self.img = self.IMGS[0]
+            self.img_count = 0
+
+        if self.tilt <= -80:
+            self.img = self.IMGS[1]
+            self.img_count = self.ANIMATION_TIME * 2
+
+        self.rotate_and_blit(win, self.img, (self.x, int(self.y)), self.tilt)
+
+    def rotate_and_blit(self, win, img, coords, tilt_angle):
+        """
+        Rotate bird and blit it to memory.
+
+        :pygame.Surface win: a pygame window Surface
+        :pygame.Image image: a pygame scaled images
+        :coords (int x, int y): a tuple containing integers
+            representing the coordinate location of the top left
+            coordinate point of the bird
+        :int tilt_angle: an integer representing the angle at
+            which the bird should be tilted
+        """
+        rotated_image = pygame.transform.rotate(img, tilt_angle)
+        old_img_center = img.get_rect(topleft=coords).center
+        new_rect = rotated_image.get_rect(center=old_img_center)
+
+        win.blit(rotated_image, new_rect.topleft)
 
     def get_mask(self):
         """
@@ -246,7 +440,7 @@ class Base:
 class Pipe:
     """Class representing a Pipe object."""
 
-    GAP = 200
+    GAP = 160
     VEL = 5
 
     def __init__(self, img, x):
@@ -314,5 +508,7 @@ class Pipe:
 
 
 if __name__ == "__main__":
+    config_path = 'config.txt'
     game = FlappyBird()
-    game.play()
+    # game.play()
+    game.train_ai(config_path)

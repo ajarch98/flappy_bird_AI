@@ -6,6 +6,15 @@ I completed this project in two phases:
 1. Building the Flappy Bird clone using pygame
 2. Integrating neat-Python into the final code
 
+## About NEAT
+
+NEAT is an acronym for Neuro-Evolution of Augmenting Technologies. It is an evolution algorithm. 
+
+It operates by:
+- creating a generation containing multiple instances of objects
+- tracking the 'fittest' instance
+- 'breeding' the fittest instances to create the subsequent generation
+
 ## How to run
 - Install Python 3
 - Clone repository
